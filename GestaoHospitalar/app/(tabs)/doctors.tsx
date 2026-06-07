@@ -1,166 +1,174 @@
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
-    Alert, // <-- NOVO: Importado para exibir a notificação de sucesso
-    FlatList,
-    Image,
-    Modal,
-    SafeAreaView,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  Alert,
+  FlatList,
+  Image,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  SafeAreaView,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from "react-native";
+import HeaderMenu from "../../components/header-menu";
+import { medicoService, Medico } from "../../services/medicoService";
+import { maskCPF, maskTelefone, unmask, isCPFValid, isTelefoneValid } from "../../utils/masks";
 
-// Dados mockados para visualização inicial
-const INITIAL_DOCTORS = [
-  {
-    id: "1",
-    name: "Dr. Roberto Silva",
-    specialty: "Cardiologia",
-    crm: "123456",
-    avatar: "https://randomuser.me/api/portraits/men/44.jpg",
-    color: "#0D52BD",
-  },
-  {
-    id: "2",
-    name: "Dra. Ana Costa",
-    specialty: "Pediatria",
-    crm: "789012",
-    avatar: "https://randomuser.me/api/portraits/women/44.jpg",
-    color: "#004D40",
-  },
-  {
-    id: "3",
-    name: "Dr. Carlos Mendes",
-    specialty: "Neurologia",
-    crm: "456123",
-    avatar: "https://randomuser.me/api/portraits/men/46.jpg",
-    color: "#0D52BD",
-  },
-  {
-    id: "4",
-    name: "Dra. Juliana Lima",
-    specialty: "Dermatologia",
-    crm: "998214",
-    avatar: "https://randomuser.me/api/portraits/women/65.jpg",
-    color: "#004D40",
-  },
-];
+interface DoctorDisplay {
+  id: string;
+  name: string;
+  specialty: string;
+  crm: string;
+  avatar: string;
+  color: string;
+}
 
 export default function DoctorsScreen() {
   const [modalVisible, setModalVisible] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
-
-  // NOVO: Estado para saber se estamos editando (guarda o ID) ou criando (fica null)
+  const [loading, setLoading] = useState(true);
   const [editingDoctorId, setEditingDoctorId] = useState<string | null>(null);
 
-  // Estados do formulário
+  // Campos do formulário — todos os campos do DTO
   const [nome, setNome] = useState("");
   const [cpf, setCpf] = useState("");
   const [crm, setCrm] = useState("");
   const [especialidade, setEspecialidade] = useState("");
+  const [telefone, setTelefone] = useState("");
 
-  // Estado que controla a lista de médicos exibida na tela
-  const [doctors, setDoctors] = useState(INITIAL_DOCTORS);
+  const [doctors, setDoctors] = useState<DoctorDisplay[]>([]);
 
-  // NOVO: Função para abrir o modal de Criação limpo
-  const handleOpenCreateModal = () => {
-    setEditingDoctorId(null);
+  const mapMedicoToDisplay = (medico: Medico): DoctorDisplay => ({
+    id: String(medico.id),
+    name: medico.nome,
+    specialty: medico.especialidade,
+    crm: medico.crm,
+    avatar:
+      `https://ui-avatars.com/api/?name=${medico.nome.replace(" ", "+")}&background=0D52BD&color=fff`,
+    color: "#0D52BD",
+  });
+
+  const fetchDoctors = async () => {
+    try {
+      setLoading(true);
+      const data = await medicoService.listarTodos();
+      setDoctors(data.map(mapMedicoToDisplay));
+    } catch (error) {
+      Alert.alert("Erro", "Não foi possível carregar a lista de médicos.");
+      console.error(error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchDoctors();
+  }, []);
+
+  const resetForm = () => {
     setNome("");
     setCpf("");
     setCrm("");
     setEspecialidade("");
+    setTelefone("");
+    setEditingDoctorId(null);
+  };
+
+  const handleOpenCreateModal = () => {
+    resetForm();
     setModalVisible(true);
   };
 
-  // ATUALIZADO: Função de edição
   const handleEdit = (id: string) => {
-    const doctorToEdit = doctors.find((doc) => doc.id === id);
-
-    if (doctorToEdit) {
-      // Preenche os dados do modal com as informações do médico selecionado
-      setNome(doctorToEdit.name);
-      setEspecialidade(doctorToEdit.specialty);
-      setCrm(doctorToEdit.crm);
-      setCpf(""); // Deixado em branco, pois ainda não temos CPF no mock
-
-      setEditingDoctorId(id); // Sinaliza que estamos no modo de edição
-      setModalVisible(true); // Abre o mesmo modal
+    const doc = doctors.find((d) => d.id === id);
+    if (doc) {
+      setNome(doc.name);
+      setEspecialidade(doc.specialty);
+      setCrm(doc.crm);
+      setCpf("");
+      setTelefone("");
+      setEditingDoctorId(id);
+      setModalVisible(true);
     }
-
-    // FUTURO: Aqui você fará o GET na API usando o CPF/ID para buscar os dados completos
   };
 
   const handleDelete = (id: string) => {
-    console.log(`Deletar médico ID: ${id}`);
-    // FUTURO: Aqui você fará o DELETE na API
+    Alert.alert("Confirmar", "Deseja realmente excluir este médico?", [
+      { text: "Cancelar", style: "cancel" },
+      {
+        text: "Excluir",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            await medicoService.deletar(Number(id));
+            setDoctors((prev) => prev.filter((doc) => doc.id !== id));
+            Alert.alert("Sucesso", "Médico excluído com sucesso!");
+          } catch (error) {
+            Alert.alert("Erro", "Não foi possível excluir o médico.");
+          }
+        },
+      },
+    ]);
   };
 
-  // ATUALIZADO: Função de salvar atende tanto Criação quanto Edição
-  const handleSaveDoctor = () => {
-    // Validação básica
-    if (!nome || !especialidade) {
-      Alert.alert(
-        "Atenção",
-        "Por favor, preencha pelo menos o Nome e a Especialidade.",
-      );
+  const handleSaveDoctor = async () => {
+    if (!nome || !especialidade || !crm || !cpf) {
+      Alert.alert("Atenção", "Preencha os campos obrigatórios: Nome, CPF, CRM e Especialidade.");
       return;
     }
 
-    if (editingDoctorId) {
-      // LOGICA DE EDIÇÃO
-      setDoctors((prevDoctors) =>
-        prevDoctors.map((doc) =>
-          doc.id === editingDoctorId
-            ? {
-                ...doc,
-                name: nome,
-                specialty: especialidade,
-                crm: crm || doc.crm,
-              }
-            : doc,
-        ),
-      );
-
-      // FUTURO: Aqui vai a validação de CPF e o PUT/PATCH na API
-
-      // Notificação de sucesso solicitada
-      Alert.alert("Sucesso", "Informações do médico editadas com sucesso!");
-    } else {
-      // LOGICA DE CRIAÇÃO
-      const novoMedico = {
-        id: Date.now().toString(),
-        name: nome,
-        specialty: especialidade,
-        crm: crm || "000000",
-        avatar:
-          "https://ui-avatars.com/api/?name=" +
-          nome.replace(" ", "+") +
-          "&background=0D52BD&color=fff",
-        color: "#0D52BD",
-      };
-
-      setDoctors((prevDoctors) => [novoMedico, ...prevDoctors]);
-      console.log("Médico adicionado localmente:", novoMedico);
-      // FUTURO: Aqui você fará o POST na API
+    if (!isCPFValid(cpf)) {
+      Alert.alert("Atenção", "CPF inválido. Digite os 11 dígitos.");
+      return;
     }
 
-    // Limpa o form e fecha o modal
-    setEditingDoctorId(null);
-    setNome("");
-    setCpf("");
-    setCrm("");
-    setEspecialidade("");
+    if (telefone && !isTelefoneValid(telefone)) {
+      Alert.alert("Atenção", "Telefone inválido. Use (00) 00000-0000.");
+      return;
+    }
+
+    try {
+      if (editingDoctorId) {
+        const updated = await medicoService.atualizar(Number(editingDoctorId), {
+          nome,
+          especialidade,
+          crm,
+          cpf: unmask(cpf),
+          telefone: telefone ? unmask(telefone) : undefined,
+        });
+        setDoctors((prev) =>
+          prev.map((doc) =>
+            doc.id === editingDoctorId ? mapMedicoToDisplay(updated) : doc
+          )
+        );
+        Alert.alert("Sucesso", "Médico atualizado com sucesso!");
+      } else {
+        const created = await medicoService.criar({
+          nome,
+          cpf: unmask(cpf),
+          crm,
+          especialidade,
+          telefone: telefone ? unmask(telefone) : undefined,
+        });
+        setDoctors((prev) => [mapMedicoToDisplay(created), ...prev]);
+        Alert.alert("Sucesso", "Médico cadastrado com sucesso!");
+      }
+    } catch (error) {
+      Alert.alert("Erro", "Não foi possível salvar. Verifique a conexão.");
+      console.error(error);
+    }
+
+    resetForm();
     setModalVisible(false);
   };
 
-  const renderDoctorCard = ({
-    item,
-  }: {
-    item: (typeof INITIAL_DOCTORS)[0];
-  }) => (
+  const renderDoctorCard = ({ item }: { item: DoctorDisplay }) => (
     <View style={[styles.card, { borderLeftColor: item.color }]}>
       <Image source={{ uri: item.avatar }} style={styles.avatar} />
       <View style={styles.cardContent}>
@@ -170,24 +178,12 @@ export default function DoctorsScreen() {
           <Text style={styles.crmText}>CRM {item.crm}</Text>
         </View>
       </View>
-
       <View style={styles.actionButtons}>
-        <TouchableOpacity
-          onPress={() => handleEdit(item.id)}
-          style={styles.actionBtn}
-        >
+        <TouchableOpacity onPress={() => handleEdit(item.id)} style={styles.actionBtn}>
           <MaterialCommunityIcons name="pencil" size={24} color="#333" />
         </TouchableOpacity>
-
-        <TouchableOpacity
-          onPress={() => handleDelete(item.id)}
-          style={styles.actionBtn}
-        >
-          <MaterialCommunityIcons
-            name="trash-can-outline"
-            size={24}
-            color="#D32F2F"
-          />
+        <TouchableOpacity onPress={() => handleDelete(item.id)} style={styles.actionBtn}>
+          <MaterialCommunityIcons name="trash-can-outline" size={24} color="#D32F2F" />
         </TouchableOpacity>
       </View>
     </View>
@@ -196,26 +192,11 @@ export default function DoctorsScreen() {
   return (
     <SafeAreaView style={styles.container}>
       {/* HEADER */}
-      <View style={styles.header}>
-        <View style={styles.headerLeft}>
-          <TouchableOpacity>
-            <Ionicons name="menu" size={32} color="#0D52BD" />
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>MedCore Admin</Text>
-        </View>
-        <TouchableOpacity>
-          <Ionicons name="search" size={24} color="#0D52BD" />
-        </TouchableOpacity>
-      </View>
+      <HeaderMenu />
 
       {/* SEARCH BAR */}
       <View style={styles.searchContainer}>
-        <Ionicons
-          name="search-outline"
-          size={20}
-          color="#666"
-          style={styles.searchIcon}
-        />
+        <Ionicons name="search-outline" size={20} color="#666" style={styles.searchIcon} />
         <TextInput
           style={styles.searchInput}
           placeholder="Buscar médicos por nome ou especialidade.."
@@ -225,263 +206,178 @@ export default function DoctorsScreen() {
         />
       </View>
 
-      {/* LISTA DE MÉDICOS */}
-      <FlatList
-        data={doctors}
-        keyExtractor={(item) => item.id}
-        renderItem={renderDoctorCard}
-        contentContainerStyle={styles.listContainer}
-        showsVerticalScrollIndicator={false}
-      />
+      {/* LISTA */}
+      {loading ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#0D52BD" />
+          <Text style={styles.loadingText}>Carregando médicos...</Text>
+        </View>
+      ) : (
+        <FlatList
+          data={doctors.filter(
+            (doc) =>
+              doc.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+              doc.specialty.toLowerCase().includes(searchQuery.toLowerCase())
+          )}
+          keyExtractor={(item) => item.id}
+          renderItem={renderDoctorCard}
+          contentContainerStyle={styles.listContainer}
+          showsVerticalScrollIndicator={false}
+        />
+      )}
 
-      {/* BOTÃO FLUTUANTE (FAB) */}
-      <TouchableOpacity
-        style={styles.fab}
-        activeOpacity={0.8}
-        onPress={handleOpenCreateModal} // <-- ATUALIZADO
-      >
+      {/* FAB */}
+      <TouchableOpacity style={styles.fab} activeOpacity={0.8} onPress={handleOpenCreateModal}>
         <MaterialCommunityIcons name="plus" size={32} color="#FFF" />
       </TouchableOpacity>
 
-      {/* MODAL DE CADASTRO / EDIÇÃO */}
+      {/* MODAL TELA CHEIA */}
       <Modal
         animationType="slide"
-        transparent={true}
         visible={modalVisible}
-        onRequestClose={() => {
-          setModalVisible(false);
-          setEditingDoctorId(null);
-        }}
+        onRequestClose={() => { resetForm(); setModalVisible(false); }}
       >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContainer}>
-            <View style={styles.modalHeader}>
-              {/* ATUALIZADO: Título dinâmico */}
-              <Text style={styles.modalTitle}>
-                {editingDoctorId ? `Editando ${nome}` : "Novo Médico"}
-              </Text>
-              <TouchableOpacity
-                onPress={() => {
-                  setModalVisible(false);
-                  setEditingDoctorId(null);
-                }}
-              >
-                <MaterialCommunityIcons name="close" size={24} color="#666" />
+        <SafeAreaView style={styles.modalFullScreen}>
+          <KeyboardAvoidingView
+            behavior={Platform.OS === "ios" ? "padding" : undefined}
+            style={{ flex: 1 }}
+          >
+            {/* Header do Modal */}
+            <View style={styles.modalTopBar}>
+              <TouchableOpacity onPress={() => { resetForm(); setModalVisible(false); }}>
+                <Ionicons name="close" size={28} color="#333" />
               </TouchableOpacity>
+              <Text style={styles.modalTopTitle}>
+                {editingDoctorId ? "Editar Médico" : "Novo Médico"}
+              </Text>
+              <View style={{ width: 28 }} />
             </View>
 
-            <TextInput
-              style={styles.input}
-              placeholder="Nome Completo"
-              value={nome}
-              onChangeText={setNome}
-            />
-            <TextInput
-              style={styles.input}
-              placeholder="Especialidade"
-              value={especialidade}
-              onChangeText={setEspecialidade}
-            />
-            <View style={styles.rowInputs}>
+            <ScrollView
+              contentContainerStyle={styles.modalFormContainer}
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
+            >
+              {/* Nome */}
+              <Text style={styles.label}>Nome Completo *</Text>
               <TextInput
-                style={[styles.input, styles.halfInput]}
-                placeholder="CRM"
+                style={styles.input}
+                placeholder="Ex: Dr. Roberto Silva"
+                value={nome}
+                onChangeText={setNome}
+                autoCapitalize="words"
+              />
+
+              {/* CPF */}
+              <Text style={styles.label}>CPF *</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="000.000.000-00"
+                value={cpf}
+                onChangeText={(text) => setCpf(maskCPF(text))}
                 keyboardType="numeric"
+                maxLength={14}
+              />
+
+              {/* CRM */}
+              <Text style={styles.label}>CRM *</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="123456"
                 value={crm}
                 onChangeText={setCrm}
-              />
-              <TextInput
-                style={[styles.input, styles.halfInput]}
-                placeholder="CPF"
                 keyboardType="numeric"
-                value={cpf}
-                onChangeText={setCpf}
               />
-            </View>
 
-            <TouchableOpacity
-              style={styles.saveButton}
-              onPress={handleSaveDoctor}
-            >
-              {/* ATUALIZADO: Texto do botão dinâmico */}
-              <Text style={styles.saveButtonText}>
-                {editingDoctorId ? "Editar" : "Salvar Cadastro"}
-              </Text>
-            </TouchableOpacity>
-          </View>
-        </View>
+              {/* Especialidade */}
+              <Text style={styles.label}>Especialidade *</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="Ex: Cardiologia"
+                value={especialidade}
+                onChangeText={setEspecialidade}
+                autoCapitalize="words"
+              />
+
+              {/* Telefone */}
+              <Text style={styles.label}>Telefone</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="(11) 99999-9999"
+                value={telefone}
+                onChangeText={(text) => setTelefone(maskTelefone(text))}
+                keyboardType="phone-pad"
+                maxLength={15}
+              />
+
+              {/* Botão Salvar */}
+              <TouchableOpacity style={styles.saveButton} onPress={handleSaveDoctor}>
+                <Text style={styles.saveButtonText}>
+                  {editingDoctorId ? "Salvar Alterações" : "Cadastrar Médico"}
+                </Text>
+              </TouchableOpacity>
+
+              <View style={{ height: 40 }} />
+            </ScrollView>
+          </KeyboardAvoidingView>
+        </SafeAreaView>
       </Modal>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#F8F9FB",
-  },
-  header: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingHorizontal: 20,
-    paddingTop: 15,
-    paddingBottom: 10,
-    marginTop: 20,
-  },
-  headerLeft: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  headerTitle: {
-    fontSize: 22,
-    fontWeight: "bold",
-    color: "#0D52BD",
-    marginLeft: 10,
-  },
+  container: { flex: 1, backgroundColor: "#F8F9FB" },
   searchContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#F0F2F5",
-    marginHorizontal: 20,
-    borderRadius: 12,
-    paddingHorizontal: 15,
-    height: 50,
-    borderWidth: 1,
-    borderColor: "#E2E8F0",
-    marginBottom: 20,
+    flexDirection: "row", alignItems: "center", backgroundColor: "#F0F2F5",
+    marginHorizontal: 20, borderRadius: 12, paddingHorizontal: 15, height: 50,
+    borderWidth: 1, borderColor: "#E2E8F0", marginBottom: 20,
   },
-  searchIcon: {
-    marginRight: 10,
-  },
-  searchInput: {
-    flex: 1,
-    fontSize: 14,
-    color: "#333",
-  },
-  listContainer: {
-    paddingHorizontal: 20,
-    paddingBottom: 100,
-  },
+  searchIcon: { marginRight: 10 },
+  searchInput: { flex: 1, fontSize: 14, color: "#333" },
+  loadingContainer: { flex: 1, justifyContent: "center", alignItems: "center" },
+  loadingText: { marginTop: 10, color: "#666" },
+  listContainer: { paddingHorizontal: 20, paddingBottom: 100 },
   card: {
-    flexDirection: "row",
-    backgroundColor: "#FFF",
-    borderRadius: 16,
-    padding: 15,
-    marginBottom: 15,
-    borderLeftWidth: 6,
-    alignItems: "center",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 3,
+    flexDirection: "row", backgroundColor: "#FFF", borderRadius: 16, padding: 15,
+    marginBottom: 15, borderLeftWidth: 6, alignItems: "center",
+    shadowColor: "#000", shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05, shadowRadius: 8, elevation: 3,
   },
-  avatar: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    marginRight: 15,
-  },
-  cardContent: {
-    flex: 1,
-  },
-  doctorName: {
-    fontSize: 16,
-    fontWeight: "bold",
-    color: "#1A1A1A",
-    marginBottom: 4,
-  },
-  doctorSpecialty: {
-    fontSize: 14,
-    color: "#666",
-    marginBottom: 8,
-  },
+  avatar: { width: 60, height: 60, borderRadius: 30, marginRight: 15 },
+  cardContent: { flex: 1 },
+  doctorName: { fontSize: 16, fontWeight: "bold", color: "#1A1A1A", marginBottom: 4 },
+  doctorSpecialty: { fontSize: 14, color: "#666", marginBottom: 8 },
   crmBadge: {
-    backgroundColor: "#69F0AE",
-    alignSelf: "flex-start",
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
+    backgroundColor: "#69F0AE", alignSelf: "flex-start",
+    paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12,
   },
-  crmText: {
-    color: "#00796B",
-    fontSize: 12,
-    fontWeight: "bold",
-  },
-  actionButtons: {
-    justifyContent: "space-between",
-    height: 60,
-  },
-  actionBtn: {
-    padding: 5,
-  },
+  crmText: { color: "#00796B", fontSize: 12, fontWeight: "bold" },
+  actionButtons: { justifyContent: "space-between", height: 60 },
+  actionBtn: { padding: 5 },
   fab: {
-    position: "absolute",
-    width: 60,
-    height: 60,
-    alignItems: "center",
-    justifyContent: "center",
-    right: 20,
-    bottom: 20,
-    backgroundColor: "#0D52BD",
-    borderRadius: 30,
-    elevation: 8,
-    shadowColor: "#0D52BD",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
+    position: "absolute", width: 60, height: 60, alignItems: "center",
+    justifyContent: "center", right: 20, bottom: 20, backgroundColor: "#0D52BD",
+    borderRadius: 30, elevation: 8, shadowColor: "#0D52BD",
+    shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8,
   },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.5)",
-    justifyContent: "flex-end",
+  // Modal Tela Cheia
+  modalFullScreen: { flex: 1, backgroundColor: "#F8F9FB" },
+  modalTopBar: {
+    flexDirection: "row", justifyContent: "space-between", alignItems: "center",
+    paddingHorizontal: 20, paddingVertical: 15, borderBottomWidth: 1,
+    borderBottomColor: "#E2E8F0", backgroundColor: "#FFF",
   },
-  modalContainer: {
-    backgroundColor: "#FFF",
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    padding: 24,
-    minHeight: "50%",
-  },
-  modalHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 20,
-  },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: "bold",
-    color: "#1A1A1A",
-  },
+  modalTopTitle: { fontSize: 18, fontWeight: "bold", color: "#1A1A1A" },
+  modalFormContainer: { paddingHorizontal: 24, paddingTop: 24 },
+  label: { fontSize: 14, fontWeight: "600", color: "#333", marginBottom: 8 },
   input: {
-    backgroundColor: "#F0F2F5",
-    borderRadius: 12,
-    paddingHorizontal: 15,
-    height: 50,
-    marginBottom: 15,
-    fontSize: 16,
-    color: "#333",
-  },
-  rowInputs: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-  },
-  halfInput: {
-    width: "48%",
+    backgroundColor: "#FFF", borderRadius: 12, paddingHorizontal: 16, height: 52,
+    marginBottom: 20, fontSize: 16, color: "#333", borderWidth: 1, borderColor: "#E2E8F0",
   },
   saveButton: {
-    backgroundColor: "#0D52BD",
-    borderRadius: 12,
-    height: 55,
-    alignItems: "center",
-    justifyContent: "center",
-    marginTop: 10,
+    backgroundColor: "#0D52BD", borderRadius: 12, height: 55,
+    alignItems: "center", justifyContent: "center", marginTop: 10,
   },
-  saveButtonText: {
-    color: "#FFF",
-    fontSize: 16,
-    fontWeight: "bold",
-  },
+  saveButtonText: { color: "#FFF", fontSize: 16, fontWeight: "bold" },
 });

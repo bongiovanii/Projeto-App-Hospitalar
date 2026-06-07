@@ -1,163 +1,198 @@
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
+  ActivityIndicator,
   Alert,
   FlatList,
   Image,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   SafeAreaView,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
+import HeaderMenu from "../../components/header-menu";
+import { pacienteService, Paciente } from "../../services/pacienteService";
+import {
+  maskCPF,
+  maskTelefone,
+  maskDataNascimento,
+  dataNascimentoToISO,
+  dataISOToDisplay,
+  unmask,
+  isCPFValid,
+  isTelefoneValid,
+  isDataNascimentoValid,
+} from "../../utils/masks";
 
-// Dados mockados para visualização inicial
-const INITIAL_PATIENTS = [
-  {
-    id: "1",
-    name: "Mariana Silva",
-    condition: "Check-up Anual",
-    phone: "(11) 98765-4321",
-    avatar: "https://randomuser.me/api/portraits/women/68.jpg",
-    color: "#0D52BD",
-  },
-  {
-    id: "2",
-    name: "João Pereira",
-    condition: "Acompanhamento Pediátrico",
-    phone: "(11) 91234-5678",
-    avatar: "https://randomuser.me/api/portraits/men/32.jpg",
-    color: "#004D40",
-  },
-  {
-    id: "3",
-    name: "Luciana Gimenez",
-    condition: "Tratamento Dermatológico",
-    phone: "(21) 99876-5432",
-    avatar: "https://randomuser.me/api/portraits/women/44.jpg",
-    color: "#0D52BD",
-  },
-  {
-    id: "4",
-    name: "Roberto Justos",
-    condition: "Revisão Cardiológica",
-    phone: "(41) 97765-1122",
-    avatar: "https://randomuser.me/api/portraits/men/85.jpg",
-    color: "#004D40",
-  },
-];
+interface PatientDisplay {
+  id: string;
+  name: string;
+  condition: string;
+  phone: string;
+  avatar: string;
+  color: string;
+}
 
 export default function PatientsScreen() {
   const [modalVisible, setModalVisible] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
-
-  // Estado para saber se estamos editando (guarda o ID) ou criando (fica null)
+  const [loading, setLoading] = useState(true);
   const [editingPatientId, setEditingPatientId] = useState<string | null>(null);
 
-  // Estados do formulário adaptados para Pacientes
+  // Campos conforme a API: nome, cpf, telefone, condicao, dataNascimento, email, endereco
   const [nome, setNome] = useState("");
   const [cpf, setCpf] = useState("");
   const [telefone, setTelefone] = useState("");
   const [condicao, setCondicao] = useState("");
+  const [dataNascimento, setDataNascimento] = useState("");
+  const [email, setEmail] = useState("");
+  const [endereco, setEndereco] = useState("");
 
-  // Estado que controla a lista de pacientes exibida na tela
-  const [patients, setPatients] = useState(INITIAL_PATIENTS);
+  const [patients, setPatients] = useState<PatientDisplay[]>([]);
 
-  // Função para abrir o modal de Criação limpo
-  const handleOpenCreateModal = () => {
-    setEditingPatientId(null);
+  const mapPacienteToDisplay = (paciente: Paciente): PatientDisplay => ({
+    id: String(paciente.id),
+    name: paciente.nome,
+    condition: paciente.condicao || "—",
+    phone: paciente.telefone || "—",
+    avatar: `https://ui-avatars.com/api/?name=${(paciente.nome || "P").replace(" ", "+")}&background=004D40&color=fff`,
+    color: "#004D40",
+  });
+
+  const fetchPatients = async () => {
+    try {
+      setLoading(true);
+      const data = await pacienteService.listarTodos();
+      setPatients(data.map(mapPacienteToDisplay));
+    } catch (error) {
+      Alert.alert("Erro", "Não foi possível carregar a lista de pacientes.");
+      console.error(error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchPatients();
+  }, []);
+
+  const resetForm = () => {
     setNome("");
     setCpf("");
     setTelefone("");
     setCondicao("");
+    setDataNascimento("");
+    setEmail("");
+    setEndereco("");
+    setEditingPatientId(null);
+  };
+
+  const handleOpenCreateModal = () => {
+    resetForm();
     setModalVisible(true);
   };
 
-  // Função de edição
   const handleEdit = (id: string) => {
-    const patientToEdit = patients.find((pat) => pat.id === id);
-
-    if (patientToEdit) {
-      // Preenche os dados do modal com as informações do paciente selecionado
-      setNome(patientToEdit.name);
-      setCondicao(patientToEdit.condition);
-      setTelefone(patientToEdit.phone);
-      setCpf(""); // Deixado em branco, pois ainda não temos CPF no mock
-
-      setEditingPatientId(id); // Sinaliza que estamos no modo de edição
+    const pat = patients.find((p) => p.id === id);
+    if (pat) {
+      setNome(pat.name);
+      setCondicao(pat.condition !== "—" ? pat.condition : "");
+      setTelefone(pat.phone !== "—" ? pat.phone : "");
+      setCpf("");
+      setDataNascimento("");
+      setEmail("");
+      setEndereco("");
+      setEditingPatientId(id);
       setModalVisible(true);
     }
   };
 
   const handleDelete = (id: string) => {
-    console.log(`Deletar paciente ID: ${id}`);
-    // FUTURO: Aqui você fará o DELETE na API
+    Alert.alert("Confirmar", "Deseja realmente excluir este paciente?", [
+      { text: "Cancelar", style: "cancel" },
+      {
+        text: "Excluir",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            await pacienteService.deletar(Number(id));
+            setPatients((prev) => prev.filter((p) => p.id !== id));
+            Alert.alert("Sucesso", "Paciente excluído com sucesso!");
+          } catch (error) {
+            Alert.alert("Erro", "Não foi possível excluir o paciente.");
+          }
+        },
+      },
+    ]);
   };
 
-  // Função de salvar atende tanto Criação quanto Edição
-  const handleSavePatient = () => {
-    // Validação básica
-    if (!nome || !condicao) {
-      Alert.alert(
-        "Atenção",
-        "Por favor, preencha pelo menos o Nome e a Condição/Motivo.",
-      );
+  const handleSavePatient = async () => {
+    if (!nome || !cpf || !telefone || !condicao) {
+      Alert.alert("Atenção", "Preencha os campos obrigatórios: Nome, CPF, Telefone e Condição.");
       return;
     }
 
-    if (editingPatientId) {
-      // LOGICA DE EDIÇÃO
-      setPatients((prevPatients) =>
-        prevPatients.map((pat) =>
-          pat.id === editingPatientId
-            ? {
-                ...pat,
-                name: nome,
-                condition: condicao,
-                phone: telefone || pat.phone,
-              }
-            : pat,
-        ),
-      );
-
-      // FUTURO: Aqui vai o PUT/PATCH na API
-
-      Alert.alert("Sucesso", "Informações do paciente editadas com sucesso!");
-    } else {
-      // LOGICA DE CRIAÇÃO
-      const novoPaciente = {
-        id: Date.now().toString(),
-        name: nome,
-        condition: condicao,
-        phone: telefone || "(00) 00000-0000",
-        avatar:
-          "https://ui-avatars.com/api/?name=" +
-          nome.replace(" ", "+") +
-          "&background=004D40&color=fff",
-        color: "#004D40",
-      };
-
-      setPatients((prevPatients) => [novoPaciente, ...prevPatients]);
-      console.log("Paciente adicionado localmente:", novoPaciente);
-      // FUTURO: Aqui você fará o POST na API
+    if (!isCPFValid(cpf)) {
+      Alert.alert("Atenção", "CPF inválido. Digite os 11 dígitos.");
+      return;
     }
 
-    // Limpa o form e fecha o modal
-    setEditingPatientId(null);
-    setNome("");
-    setCpf("");
-    setTelefone("");
-    setCondicao("");
+    if (!isTelefoneValid(telefone)) {
+      Alert.alert("Atenção", "Telefone inválido. Use (00) 00000-0000.");
+      return;
+    }
+
+    if (dataNascimento && !isDataNascimentoValid(dataNascimento)) {
+      Alert.alert("Atenção", "Data de nascimento inválida. Use DD/MM/AAAA.");
+      return;
+    }
+
+    try {
+      if (editingPatientId) {
+        const updated = await pacienteService.atualizar(Number(editingPatientId), {
+          nome,
+          cpf: unmask(cpf),
+          telefone: unmask(telefone),
+          condicao,
+          dataNascimento: dataNascimento ? dataNascimentoToISO(dataNascimento) : undefined,
+          email: email || undefined,
+          endereco: endereco || undefined,
+        });
+        setPatients((prev) =>
+          prev.map((p) =>
+            p.id === editingPatientId ? mapPacienteToDisplay(updated) : p
+          )
+        );
+        Alert.alert("Sucesso", "Paciente atualizado com sucesso!");
+      } else {
+        const created = await pacienteService.criar({
+          nome,
+          cpf: unmask(cpf),
+          telefone: unmask(telefone),
+          condicao,
+          dataNascimento: dataNascimento ? dataNascimentoToISO(dataNascimento) : undefined,
+          email: email || undefined,
+          endereco: endereco || undefined,
+        });
+        setPatients((prev) => [mapPacienteToDisplay(created), ...prev]);
+        Alert.alert("Sucesso", "Paciente cadastrado com sucesso!");
+      }
+    } catch (error) {
+      Alert.alert("Erro", "Não foi possível salvar. Verifique a conexão.");
+      console.error(error);
+    }
+
+    resetForm();
     setModalVisible(false);
   };
 
-  const renderPatientCard = ({
-    item,
-  }: {
-    item: (typeof INITIAL_PATIENTS)[0];
-  }) => (
+  const renderPatientCard = ({ item }: { item: PatientDisplay }) => (
     <View style={[styles.card, { borderLeftColor: item.color }]}>
       <Image source={{ uri: item.avatar }} style={styles.avatar} />
       <View style={styles.cardContent}>
@@ -167,24 +202,12 @@ export default function PatientsScreen() {
           <Text style={styles.phoneText}>{item.phone}</Text>
         </View>
       </View>
-
       <View style={styles.actionButtons}>
-        <TouchableOpacity
-          onPress={() => handleEdit(item.id)}
-          style={styles.actionBtn}
-        >
+        <TouchableOpacity onPress={() => handleEdit(item.id)} style={styles.actionBtn}>
           <MaterialCommunityIcons name="pencil" size={24} color="#333" />
         </TouchableOpacity>
-
-        <TouchableOpacity
-          onPress={() => handleDelete(item.id)}
-          style={styles.actionBtn}
-        >
-          <MaterialCommunityIcons
-            name="trash-can-outline"
-            size={24}
-            color="#D32F2F"
-          />
+        <TouchableOpacity onPress={() => handleDelete(item.id)} style={styles.actionBtn}>
+          <MaterialCommunityIcons name="trash-can-outline" size={24} color="#D32F2F" />
         </TouchableOpacity>
       </View>
     </View>
@@ -193,26 +216,11 @@ export default function PatientsScreen() {
   return (
     <SafeAreaView style={styles.container}>
       {/* HEADER */}
-      <View style={styles.header}>
-        <View style={styles.headerLeft}>
-          <TouchableOpacity>
-            <Ionicons name="menu" size={32} color="#0D52BD" />
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>MedCore Admin</Text>
-        </View>
-        <TouchableOpacity>
-          <Ionicons name="search" size={24} color="#0D52BD" />
-        </TouchableOpacity>
-      </View>
+      <HeaderMenu />
 
       {/* SEARCH BAR */}
       <View style={styles.searchContainer}>
-        <Ionicons
-          name="search-outline"
-          size={20}
-          color="#666"
-          style={styles.searchIcon}
-        />
+        <Ionicons name="search-outline" size={20} color="#666" style={styles.searchIcon} />
         <TextInput
           style={styles.searchInput}
           placeholder="Buscar pacientes por nome ou condição.."
@@ -222,261 +230,200 @@ export default function PatientsScreen() {
         />
       </View>
 
-      {/* LISTA DE PACIENTES */}
-      <FlatList
-        data={patients}
-        keyExtractor={(item) => item.id}
-        renderItem={renderPatientCard}
-        contentContainerStyle={styles.listContainer}
-        showsVerticalScrollIndicator={false}
-      />
+      {/* LISTA */}
+      {loading ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#0D52BD" />
+          <Text style={styles.loadingText}>Carregando pacientes...</Text>
+        </View>
+      ) : (
+        <FlatList
+          data={patients.filter(
+            (p) =>
+              p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+              p.condition.toLowerCase().includes(searchQuery.toLowerCase())
+          )}
+          keyExtractor={(item) => item.id}
+          renderItem={renderPatientCard}
+          contentContainerStyle={styles.listContainer}
+          showsVerticalScrollIndicator={false}
+        />
+      )}
 
-      {/* BOTÃO FLUTUANTE (FAB) */}
-      <TouchableOpacity
-        style={styles.fab}
-        activeOpacity={0.8}
-        onPress={handleOpenCreateModal}
-      >
+      {/* FAB */}
+      <TouchableOpacity style={styles.fab} activeOpacity={0.8} onPress={handleOpenCreateModal}>
         <Ionicons name="add" size={32} color="#FFF" />
       </TouchableOpacity>
 
-      {/* MODAL DE CADASTRO / EDIÇÃO */}
+      {/* MODAL TELA CHEIA */}
       <Modal
         animationType="slide"
-        transparent={true}
         visible={modalVisible}
-        onRequestClose={() => {
-          setModalVisible(false);
-          setEditingPatientId(null);
-        }}
+        onRequestClose={() => { resetForm(); setModalVisible(false); }}
       >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContainer}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>
-                {editingPatientId ? `Editando ${nome}` : "Novo Paciente"}
-              </Text>
-              <TouchableOpacity
-                onPress={() => {
-                  setModalVisible(false);
-                  setEditingPatientId(null);
-                }}
-              >
-                <MaterialCommunityIcons name="close" size={24} color="#666" />
+        <SafeAreaView style={styles.modalFullScreen}>
+          <KeyboardAvoidingView
+            behavior={Platform.OS === "ios" ? "padding" : undefined}
+            style={{ flex: 1 }}
+          >
+            {/* Header do Modal */}
+            <View style={styles.modalTopBar}>
+              <TouchableOpacity onPress={() => { resetForm(); setModalVisible(false); }}>
+                <Ionicons name="close" size={28} color="#333" />
               </TouchableOpacity>
-            </View>
-
-            <TextInput
-              style={styles.input}
-              placeholder="Nome Completo"
-              value={nome}
-              onChangeText={setNome}
-            />
-            <TextInput
-              style={styles.input}
-              placeholder="Condição ou Motivo da Consulta"
-              value={condicao}
-              onChangeText={setCondicao}
-            />
-            <View style={styles.rowInputs}>
-              <TextInput
-                style={[styles.input, styles.halfInput]}
-                placeholder="Telefone"
-                keyboardType="phone-pad"
-                value={telefone}
-                onChangeText={setTelefone}
-              />
-              <TextInput
-                style={[styles.input, styles.halfInput]}
-                placeholder="CPF"
-                keyboardType="numeric"
-                value={cpf}
-                onChangeText={setCpf}
-              />
-            </View>
-
-            <TouchableOpacity
-              style={styles.saveButton}
-              onPress={handleSavePatient}
-            >
-              <Text style={styles.saveButtonText}>
-                {editingPatientId ? "Editar" : "Salvar Cadastro"}
+              <Text style={styles.modalTopTitle}>
+                {editingPatientId ? "Editar Paciente" : "Novo Paciente"}
               </Text>
-            </TouchableOpacity>
-          </View>
-        </View>
+              <View style={{ width: 28 }} />
+            </View>
+
+            <ScrollView
+              contentContainerStyle={styles.modalFormContainer}
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
+            >
+              {/* Nome */}
+              <Text style={styles.label}>Nome Completo *</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="Ex: Maria Oliveira Santos"
+                value={nome}
+                onChangeText={setNome}
+                autoCapitalize="words"
+              />
+
+              {/* CPF */}
+              <Text style={styles.label}>CPF *</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="000.000.000-00"
+                value={cpf}
+                onChangeText={(text) => setCpf(maskCPF(text))}
+                keyboardType="numeric"
+                maxLength={14}
+              />
+
+              {/* Telefone */}
+              <Text style={styles.label}>Telefone *</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="(11) 99999-9999"
+                value={telefone}
+                onChangeText={(text) => setTelefone(maskTelefone(text))}
+                keyboardType="phone-pad"
+                maxLength={15}
+              />
+
+              {/* Condição / Motivo */}
+              <Text style={styles.label}>Condição / Motivo da Consulta *</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="Ex: Check-up Anual"
+                value={condicao}
+                onChangeText={setCondicao}
+                autoCapitalize="sentences"
+              />
+
+              {/* Data de Nascimento */}
+              <Text style={styles.label}>Data de Nascimento</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="DD/MM/AAAA"
+                value={dataNascimento}
+                onChangeText={(text) => setDataNascimento(maskDataNascimento(text))}
+                keyboardType="numeric"
+                maxLength={10}
+              />
+
+              {/* Email */}
+              <Text style={styles.label}>E-mail</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="paciente@email.com"
+                value={email}
+                onChangeText={setEmail}
+                keyboardType="email-address"
+                autoCapitalize="none"
+              />
+
+              {/* Endereço */}
+              <Text style={styles.label}>Endereço</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="Rua, número, bairro, cidade"
+                value={endereco}
+                onChangeText={setEndereco}
+                autoCapitalize="sentences"
+              />
+
+              {/* Botão Salvar */}
+              <TouchableOpacity style={styles.saveButton} onPress={handleSavePatient}>
+                <Text style={styles.saveButtonText}>
+                  {editingPatientId ? "Salvar Alterações" : "Cadastrar Paciente"}
+                </Text>
+              </TouchableOpacity>
+
+              <View style={{ height: 40 }} />
+            </ScrollView>
+          </KeyboardAvoidingView>
+        </SafeAreaView>
       </Modal>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#F8F9FB",
-  },
-  header: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingHorizontal: 20,
-    paddingTop: 15,
-    paddingBottom: 10,
-    marginTop: 30, // Ajustado para não colar no topo em alguns aparelhos
-  },
-  headerLeft: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  headerTitle: {
-    fontSize: 22,
-    fontWeight: "bold",
-    color: "#0D52BD",
-    marginLeft: 10,
-  },
+  container: { flex: 1, backgroundColor: "#F8F9FB" },
   searchContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#F0F2F5",
-    marginHorizontal: 20,
-    borderRadius: 12,
-    paddingHorizontal: 15,
-    height: 50,
-    borderWidth: 1,
-    borderColor: "#E2E8F0",
-    marginBottom: 20,
+    flexDirection: "row", alignItems: "center", backgroundColor: "#F0F2F5",
+    marginHorizontal: 20, borderRadius: 12, paddingHorizontal: 15, height: 50,
+    borderWidth: 1, borderColor: "#E2E8F0", marginBottom: 20,
   },
-  searchIcon: {
-    marginRight: 10,
-  },
-  searchInput: {
-    flex: 1,
-    fontSize: 14,
-    color: "#333",
-  },
-  listContainer: {
-    paddingHorizontal: 20,
-    paddingBottom: 100,
-  },
+  searchIcon: { marginRight: 10 },
+  searchInput: { flex: 1, fontSize: 14, color: "#333" },
+  loadingContainer: { flex: 1, justifyContent: "center", alignItems: "center" },
+  loadingText: { marginTop: 10, color: "#666" },
+  listContainer: { paddingHorizontal: 20, paddingBottom: 100 },
   card: {
-    flexDirection: "row",
-    backgroundColor: "#FFF",
-    borderRadius: 16,
-    padding: 15,
-    marginBottom: 15,
-    borderLeftWidth: 6,
-    alignItems: "center",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 3,
+    flexDirection: "row", backgroundColor: "#FFF", borderRadius: 16, padding: 15,
+    marginBottom: 15, borderLeftWidth: 6, alignItems: "center",
+    shadowColor: "#000", shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05, shadowRadius: 8, elevation: 3,
   },
-  avatar: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    marginRight: 15,
-  },
-  cardContent: {
-    flex: 1,
-  },
-  patientName: {
-    fontSize: 16,
-    fontWeight: "bold",
-    color: "#1A1A1A",
-    marginBottom: 4,
-  },
-  patientCondition: {
-    fontSize: 14,
-    color: "#666",
-    marginBottom: 8,
-  },
+  avatar: { width: 60, height: 60, borderRadius: 30, marginRight: 15 },
+  cardContent: { flex: 1 },
+  patientName: { fontSize: 16, fontWeight: "bold", color: "#1A1A1A", marginBottom: 4 },
+  patientCondition: { fontSize: 14, color: "#666", marginBottom: 8 },
   phoneBadge: {
-    backgroundColor: "#E8F5E9",
-    alignSelf: "flex-start",
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
+    backgroundColor: "#E8F5E9", alignSelf: "flex-start",
+    paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12,
   },
-  phoneText: {
-    color: "#2E7D32",
-    fontSize: 12,
-    fontWeight: "bold",
-  },
-  actionButtons: {
-    justifyContent: "space-between",
-    height: 60,
-  },
-  actionBtn: {
-    padding: 5,
-  },
+  phoneText: { color: "#2E7D32", fontSize: 12, fontWeight: "bold" },
+  actionButtons: { justifyContent: "space-between", height: 60 },
+  actionBtn: { padding: 5 },
   fab: {
-    position: "absolute",
-    width: 60,
-    height: 60,
-    alignItems: "center",
-    justifyContent: "center",
-    right: 20,
-    bottom: 20,
-    backgroundColor: "#0D52BD",
-    borderRadius: 30,
-    elevation: 8,
-    shadowColor: "#0D52BD",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
+    position: "absolute", width: 60, height: 60, alignItems: "center",
+    justifyContent: "center", right: 20, bottom: 20, backgroundColor: "#0D52BD",
+    borderRadius: 30, elevation: 8, shadowColor: "#0D52BD",
+    shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8,
   },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.5)",
-    justifyContent: "flex-end",
+  // Modal Tela Cheia
+  modalFullScreen: { flex: 1, backgroundColor: "#F8F9FB" },
+  modalTopBar: {
+    flexDirection: "row", justifyContent: "space-between", alignItems: "center",
+    paddingHorizontal: 20, paddingVertical: 15, borderBottomWidth: 1,
+    borderBottomColor: "#E2E8F0", backgroundColor: "#FFF",
   },
-  modalContainer: {
-    backgroundColor: "#FFF",
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    padding: 24,
-    minHeight: "50%",
-  },
-  modalHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 20,
-  },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: "bold",
-    color: "#1A1A1A",
-  },
+  modalTopTitle: { fontSize: 18, fontWeight: "bold", color: "#1A1A1A" },
+  modalFormContainer: { paddingHorizontal: 24, paddingTop: 24 },
+  label: { fontSize: 14, fontWeight: "600", color: "#333", marginBottom: 8 },
   input: {
-    backgroundColor: "#F0F2F5",
-    borderRadius: 12,
-    paddingHorizontal: 15,
-    height: 50,
-    marginBottom: 15,
-    fontSize: 16,
-    color: "#333",
-  },
-  rowInputs: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-  },
-  halfInput: {
-    width: "48%",
+    backgroundColor: "#FFF", borderRadius: 12, paddingHorizontal: 16, height: 52,
+    marginBottom: 20, fontSize: 16, color: "#333", borderWidth: 1, borderColor: "#E2E8F0",
   },
   saveButton: {
-    backgroundColor: "#0D52BD",
-    borderRadius: 12,
-    height: 55,
-    alignItems: "center",
-    justifyContent: "center",
-    marginTop: 10,
+    backgroundColor: "#0D52BD", borderRadius: 12, height: 55,
+    alignItems: "center", justifyContent: "center", marginTop: 10,
   },
-  saveButtonText: {
-    color: "#FFF",
-    fontSize: 16,
-    fontWeight: "bold",
-  },
+  saveButtonText: { color: "#FFF", fontSize: 16, fontWeight: "bold" },
 });
