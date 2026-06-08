@@ -35,6 +35,23 @@ export interface AgendamentoUpdateDTO {
   observacoes?: string;
 }
 
+// Relatório do dia (via procedure no backend)
+export interface RelatorioDia {
+  data: string;
+  totalConsultas: number;
+  finalizados: number;
+  emEspera: number;
+  agendamentos: {
+    id: number;
+    horario: string;
+    tipo: string;
+    status: string | null;
+    paciente_nome: string | null;
+    medico_nome: string | null;
+    medico_especialidade: string | null;
+  }[];
+}
+
 const ENDPOINT = "/api/agendamentos";
 
 export const agendamentoService = {
@@ -48,4 +65,7 @@ export const agendamentoService = {
     api.put<Agendamento>(`${ENDPOINT}/${id}`, data),
 
   deletar: (id: number) => api.delete<void>(`${ENDPOINT}/${id}`),
+
+  // Relatório do dia via stored procedure
+  relatorioDia: (data: string) => api.get<RelatorioDia>(`/api/relatorio/dia?data=${data}`),
 };

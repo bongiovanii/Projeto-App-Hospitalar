@@ -10,7 +10,7 @@ import {
   View,
 } from "react-native";
 import HeaderMenu from "../../components/header-menu";
-import { agendamentoService, Agendamento } from "../../services/agendamentoService";
+import { agendamentoService, RelatorioDia } from "../../services/agendamentoService";
 
 const STATUS_COLORS: Record<string, { bg: string; text: string; label: string }> = {
   concluido: { bg: "#E8F5E9", text: "#1B5E20", label: "FINALIZADO" },
@@ -32,7 +32,7 @@ function getLocalDateString(): string {
 }
 
 export default function DashboardScreen() {
-  const [appointments, setAppointments] = useState<Agendamento[]>([]);
+  const [relatorio, setRelatorio] = useState<RelatorioDia | null>(null);
   const [loading, setLoading] = useState(true);
 
   const today = new Date();
@@ -40,15 +40,16 @@ export default function DashboardScreen() {
   const dia = today.getDate();
   const mesExtenso = today.toLocaleDateString("pt-BR", { month: "long" });
   const dataFormatada = `${diaSemana}, ${dia} de ${mesExtenso.charAt(0).toUpperCase() + mesExtenso.slice(1)}`;
+  const todayStr = getLocalDateString();
 
-  const fetchAppointments = async () => {
+  const fetchRelatorio = async () => {
     try {
       setLoading(true);
-      const data = await agendamentoService.listarTodos();
-      setAppointments(data);
+      const data = await agendamentoService.relatorioDia(todayStr);
+      setRelatorio(data);
     } catch (error) {
-      console.error("Erro ao carregar agendamentos:", error);
-      setAppointments([]);
+      console.error("Erro ao carregar relatório:", error);
+      setRelatorio(null);
     } finally {
       setLoading(false);
     }
@@ -57,13 +58,14 @@ export default function DashboardScreen() {
   // Atualiza sempre que a tela ganha foco
   useFocusEffect(
     useCallback(() => {
-      fetchAppointments();
+      fetchRelatorio();
     }, [])
   );
 
-  const todayStr = getLocalDateString();
-  const todayAppointments = appointments.filter((a) => a.data === todayStr);
-  const totalHoje = todayAppointments.length;
+  const totalHoje = relatorio?.totalConsultas ?? 0;
+  const finalizados = relatorio?.finalizados ?? 0;
+  const emEspera = relatorio?.emEspera ?? 0;
+  const agendamentos = relatorio?.agendamentos ?? [];
 
   return (
     <SafeAreaView style={styles.container}>
@@ -94,7 +96,7 @@ export default function DashboardScreen() {
               <MaterialCommunityIcons name="check-circle-outline" size={20} color="#4CAF50" />
             </View>
             <Text style={styles.smallCardValue}>
-              {todayAppointments.filter((a) => a.status === "concluido").length.toString().padStart(2, "0")}
+              {finalizados.toString().padStart(2, "0")}
             </Text>
             <Text style={styles.smallCardSubtitle}>Consultas</Text>
           </View>
@@ -105,29 +107,29 @@ export default function DashboardScreen() {
               <MaterialCommunityIcons name="clock-outline" size={20} color="#00BCD4" />
             </View>
             <Text style={styles.smallCardValue}>
-              {todayAppointments.filter((a) => a.status === "em_espera").length.toString().padStart(2, "0")}
+              {emEspera.toString().padStart(2, "0")}
             </Text>
             <Text style={styles.smallCardSubtitle}>Consultas</Text>
           </View>
         </View>
 
         <View style={styles.listHeader}>
-          <Text style={styles.listTitle}>Próximos atendimentos</Text>
+          <Text style={styles.listTitle}>Atendimentos de hoje</Text>
         </View>
 
         {loading ? (
           <ActivityIndicator size="small" color="#0D52BD" />
-        ) : todayAppointments.length === 0 ? (
+        ) : agendamentos.length === 0 ? (
           <View style={styles.emptyState}>
             <MaterialCommunityIcons name="calendar-blank" size={48} color="#CCC" />
             <Text style={styles.emptyText}>Nenhum agendamento para hoje</Text>
           </View>
         ) : (
-          todayAppointments.slice(0, 5).map((item) => {
-            const statusInfo = STATUS_COLORS[item.status] || STATUS_COLORS.em_espera;
-            const parts = (item.data || "").split("-");
-            const appointmentDay = parts[2] ? parseInt(parts[2], 10).toString() : "—";
-            const appointmentMonth = parts[1] ? MESES[parseInt(parts[1], 10) - 1] : "—";
+          agendamentos.map((item) => {
+            const statusInfo = STATUS_COLORS[item.status || "em_espera"] || STATUS_COLORS.em_espera;
+            const parts = todayStr.split("-");
+            const appointmentDay = parseInt(parts[2], 10).toString();
+            const appointmentMonth = MESES[parseInt(parts[1], 10) - 1];
 
             return (
               <View key={item.id} style={styles.listItem}>
@@ -136,8 +138,8 @@ export default function DashboardScreen() {
                   <Text style={styles.dateBadgeDay}>{appointmentDay}</Text>
                 </View>
                 <View style={styles.listInfo}>
-                  <Text style={styles.listName}>{item.paciente?.nome || "Paciente"}</Text>
-                  <Text style={styles.listDetails}>{item.horario} • {item.medico?.especialidade || item.tipo}</Text>
+                  <Text style={styles.listName}>{item.paciente_nome || "Paciente"}</Text>
+                  <Text style={styles.listDetails}>{item.horario} • {item.medico_especialidade || item.tipo}</Text>
                 </View>
                 <View style={styles.listAction}>
                   <View style={[styles.statusBadge, { backgroundColor: statusInfo.bg }]}>

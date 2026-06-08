@@ -98,18 +98,20 @@ export default function PatientsScreen() {
     setModalVisible(true);
   };
 
-  const handleEdit = (id: string) => {
-    const pat = patients.find((p) => p.id === id);
-    if (pat) {
-      setNome(pat.name);
-      setCondicao(pat.condition !== "—" ? pat.condition : "");
-      setTelefone(pat.phone !== "—" ? pat.phone : "");
-      setCpf("");
-      setDataNascimento("");
-      setEmail("");
-      setEndereco("");
+  const handleEdit = async (id: string) => {
+    try {
+      const paciente = await pacienteService.buscarPorId(Number(id));
+      setNome(paciente.nome || "");
+      setCpf(paciente.cpf ? maskCPF(paciente.cpf) : "");
+      setTelefone(paciente.telefone ? maskTelefone(paciente.telefone) : "");
+      setCondicao(paciente.condicao || "");
+      setDataNascimento(paciente.dataNascimento ? dataISOToDisplay(paciente.dataNascimento) : "");
+      setEmail(paciente.email || "");
+      setEndereco(paciente.endereco || "");
       setEditingPatientId(id);
       setModalVisible(true);
+    } catch (error) {
+      Alert.alert("Erro", "Não foi possível carregar os dados do paciente.");
     }
   };
 

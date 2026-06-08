@@ -85,16 +85,18 @@ export default function DoctorsScreen() {
     setModalVisible(true);
   };
 
-  const handleEdit = (id: string) => {
-    const doc = doctors.find((d) => d.id === id);
-    if (doc) {
-      setNome(doc.name);
-      setEspecialidade(doc.specialty);
-      setCrm(doc.crm);
-      setCpf("");
-      setTelefone("");
+  const handleEdit = async (id: string) => {
+    try {
+      const medico = await medicoService.buscarPorId(Number(id));
+      setNome(medico.nome || "");
+      setEspecialidade(medico.especialidade || "");
+      setCrm(medico.crm || "");
+      setCpf(medico.cpf ? maskCPF(medico.cpf) : "");
+      setTelefone(medico.telefone ? maskTelefone(medico.telefone) : "");
       setEditingDoctorId(id);
       setModalVisible(true);
+    } catch (error) {
+      Alert.alert("Erro", "Não foi possível carregar os dados do médico.");
     }
   };
 
